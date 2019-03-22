@@ -59,7 +59,26 @@ def get_out_img(features):
                 out[y, x] = math.floor((features[y,x]*255) / features.max())
     return out
 
+def project(x1, y1, H):
+    # TODO: Step 3A
+    coord = np.array([x1, y1, 1])
+    projection = np.matmul(H, coord)
+    x2 = projection[0] / projection[2]
+    y2 = projection[1] / projection[2]
+    return (x2, y2)
+
+def computeInlierCount(H, matches, numMatches, inlierThreshold):
+    # TODO: Step 3B
+    inliers = 0
+    return inliers
+
+def RANSAC(matches, numMatches, numIterations, inlierThreshold, hom, homInv, image1Display, image2Display):
+    # TODO: Step 3C
+    return None
+
 # =========================PART 1=========================
+# Most methods used for part 1 are built-in OpenCV methods
+# Much of the code using these methods are adapted from OpenCV documentation/tutorials
 # Get image gradients
 boxes_Ix = cv2.Sobel(boxes_gray, cv2.CV_32F, 1, 0, ksize=3)
 boxes_Iy = cv2.Sobel(boxes_gray, cv2.CV_32F, 0, 1, ksize=3)
@@ -88,17 +107,40 @@ sift = cv2.xfeatures2d.SIFT_create()
 _, r1_desc = sift.compute(r1, r1_kp)
 _, r2_desc = sift.compute(r2, r2_kp)
 bf = cv2.BFMatcher()
+# Returns 2 best matches, to apply ratio test
 matches = bf.knnMatch(r1_desc, r2_desc, 2)
 # Apply ratio test
 good = []
 for m,n in matches:
-    if m.distance < 0.5*n.distance:
-        good.append([m])
-matched_img = cv2.drawMatchesKnn(r1, r1_kp, r2, r2_kp, good, None, flags=2)
+    if m.distance < RATIO_THRESHOLD*n.distance:
+        good.append(m)
+matched_img = cv2.drawMatches(r1, r1_kp, r2, r2_kp, good, None, flags=cv2.DRAW_MATCHES_FLAGS_NOT_DRAW_SINGLE_POINTS)
 cv2.imwrite(join(DIR_IMG, '2.png'), matched_img)
 # =========================PART 1 END=========================
 
 
 # =========================PART 2=========================
+# Lists of coordinates for keypoints in Rainier1 and Rainier2
+# findHomography expects a numpy array
+src_pts = np.array([r1_kp[m.queryIdx].pt for m in good])
+dst_pts = np.array([r2_kp[m.trainIdx].pt for m in good])
+# Get 3x3 homography matrix H
+# See lec 8 slide 42 or lec 5 slides 28-30
+# Also see https://docs.opencv.org/3.4.0/d9/dab/tutorial_homography.html
+# findHomography returns a 2-tuple
+# First element is the H matrix
+# The second element is a list of answers to the equations (all 1s)
+H = cv2.findHomography(src_pts, dst_pts, 0)[0]
+projections = []
+for pt in src_pts:
+   projections.append(project(pt[0], pt[1], H))
+
+# Test with built-in OpenCV method; uncomment as needed
+# perspectiveTransform expects a 3D array
+# src_pts_temp = np.array([src_pts])
+# projections_test = cv2.perspectiveTransform(src_pts_temp, H)
 
 # =========================PART 2 END=========================
+
+cv2.waitKey(0)
+cv2.destroyAllWindows()
