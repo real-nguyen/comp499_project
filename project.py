@@ -6,6 +6,7 @@ from os.path import join
 
 DIRNAME = dirname(__file__)
 DIR_IMG = join(DIRNAME, 'project_images')
+RATIO_THRESHOLD = 0.5
 boxes = cv2.imread(join(DIR_IMG, 'Boxes.png'))
 boxes_gray = cv2.cvtColor(boxes,cv2.COLOR_BGR2GRAY)
 boxes_gray = np.float32(boxes_gray)
@@ -58,6 +59,7 @@ def get_out_img(features):
                 out[y, x] = math.floor((features[y,x]*255) / features.max())
     return out
 
+# =========================PART 1=========================
 # Get image gradients
 boxes_Ix = cv2.Sobel(boxes_gray, cv2.CV_32F, 1, 0, ksize=3)
 boxes_Iy = cv2.Sobel(boxes_gray, cv2.CV_32F, 0, 1, ksize=3)
@@ -82,18 +84,21 @@ r2_kp = get_keypoints(r2_features)
 r2_out = get_out_img(r2_features)
 cv2.imwrite(join(DIR_IMG, '1c.png'), r2_out)
 
-# sift = cv2.xfeatures2d.SIFT_create()
-# _, r1_desc = sift.compute(r1, r1_kp)
-# _, r2_desc = sift.compute(r2, r2_kp)
-# bf = cv2.BFMatcher()
-# matches = bf.match(r1_desc, r2_desc)
+sift = cv2.xfeatures2d.SIFT_create()
+_, r1_desc = sift.compute(r1, r1_kp)
+_, r2_desc = sift.compute(r2, r2_kp)
+bf = cv2.BFMatcher()
+matches = bf.knnMatch(r1_desc, r2_desc, 2)
 # Apply ratio test
-# good = []
-# for m,n in matches:
-#     if m.distance < 0.75*n.distance:
-#         good.append([m])
-# matched_img = cv2.drawMatches(r1, r1_kp, r2, r2_kp, matches, None)
-# cv2.imshow('matched_img', matched_img)
+good = []
+for m,n in matches:
+    if m.distance < 0.5*n.distance:
+        good.append([m])
+matched_img = cv2.drawMatchesKnn(r1, r1_kp, r2, r2_kp, good, None, flags=2)
+cv2.imwrite(join(DIR_IMG, '2.png'), matched_img)
+# =========================PART 1 END=========================
 
-cv2.waitKey(0)
-cv2.destroyAllWindows()
+
+# =========================PART 2=========================
+
+# =========================PART 2 END=========================
