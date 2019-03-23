@@ -60,17 +60,33 @@ def get_out_img(features):
     return out
 
 def project(x1, y1, H):
-    # TODO: Step 3A
+    # Step 3A
     coord = np.array([x1, y1, 1])
     projection = np.matmul(H, coord)
     x2 = projection[0] / projection[2]
     y2 = projection[1] / projection[2]
     return (x2, y2)
 
-def computeInlierCount(H, matches, numMatches, inlierThreshold):
-    # TODO: Step 3B
-    inliers = 0
-    return inliers
+def computeInlierCount(H, matches, kp1, kp2, inlierThreshold):
+    # Step 3B
+    img1_pts = np.array([kp1[m.queryIdx].pt for m in matches])
+    img2_pts = np.array([kp2[m.trainIdx].pt for m in matches])
+    inliers = []
+    projections = []
+    for pt in img1_pts:
+        projections.append(project(pt[0], pt[1], H))
+
+    match_idx = 0
+    for proj_pt in projections:
+        img2_pt = img2_pts[match_idx]
+        x1, y1 = proj_pt[0], proj_pt[1]
+        x2, y2 = img2_pt[0], img2_pt[1]
+        # Calculate Euclidian distance
+        distance = math.sqrt((x1 - x2)**2 + (y1 - y2)**2)
+        if distance < inlierThreshold:
+            inliers.append(matches[match_idx])
+        match_idx += 1
+    return len(inliers)
 
 def RANSAC(matches, numMatches, numIterations, inlierThreshold, hom, homInv, image1Display, image2Display):
     # TODO: Step 3C
@@ -120,27 +136,26 @@ cv2.imwrite(join(DIR_IMG, '2.png'), matched_img)
 
 
 # =========================PART 2=========================
-# Lists of coordinates for keypoints in Rainier1 and Rainier2
+# Lists of coordinates for matches in Rainier1 and Rainier2
 # findHomography expects a numpy array
-src_pts = np.array([r1_kp[m.queryIdx].pt for m in good])
-dst_pts = np.array([r2_kp[m.trainIdx].pt for m in good])
+r1_pts = np.array([r1_kp[m.queryIdx].pt for m in good])
+r2_pts = np.array([r2_kp[m.trainIdx].pt for m in good])
 # Get 3x3 homography matrix H
 # See lec 8 slide 42 or lec 5 slides 28-30
 # Also see https://docs.opencv.org/3.4.0/d9/dab/tutorial_homography.html
 # findHomography returns a 2-tuple
 # First element is the H matrix
 # The second element is a list of answers to the equations (all 1s)
-H = cv2.findHomography(src_pts, dst_pts, 0)[0]
-projections = []
-for pt in src_pts:
-   projections.append(project(pt[0], pt[1], H))
+H = cv2.findHomography(r1_pts, r2_pts, 0)[0]
 
 # Test with built-in OpenCV method; uncomment as needed
 # perspectiveTransform expects a 3D array
 # src_pts_temp = np.array([src_pts])
 # projections_test = cv2.perspectiveTransform(src_pts_temp, H)
 
+nb_inliers = computeInlierCount(H, good, r1_kp, r2_kp, 1)
+
 # =========================PART 2 END=========================
 
-cv2.waitKey(0)
-cv2.destroyAllWindows()
+# cv2.waitKey(0)
+# cv2.destroyAllWindows()
