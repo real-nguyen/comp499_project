@@ -135,34 +135,35 @@ def get_inliers(H, matches, img1_pts, img2_pts, inlierThreshold):
     return inliers
 
 def stitch(img1, img2, H, H_inv):
-    # TODO: Step 4
+    # Step 4
     # Compute size of stitched_img
-    # Project four corners of img2 onto img1 using H_inv
+    # Projecting top left and bottom right corners of img2 give us all the info we need
     bottom_edge = img2.shape[0] - 1
     right_edge = img2.shape[1] - 1
-    top_left_x, top_left_y = project(0, 0, H_inv)
     top_right_x, top_right_y = project(right_edge, 0, H_inv)
-    bottom_left_x, bottom_left_y = project(0, bottom_edge, H_inv)
     bottom_right_x, bottom_right_y = project(right_edge, bottom_edge, H_inv)
     
     img1_height, img1_width = img1.shape[0], img1.shape[1]
-    top_height_diff = abs(top_right_y) if top_right_y < 0 else 0
     bottom_height_diff = bottom_right_y - img1_height if bottom_right_y > img1_height else 0
     width_diff = max(top_right_x, bottom_right_x) - img1_width
 
-    # First, create blank imaged with new dimensions
-    # Assume 3 channeled image
-    stitched_img_height = math.ceil(img1_height + top_height_diff + bottom_height_diff)
+    # First, create blank image with new dimensions (assume 3 channels)
+    stitched_img_height = math.ceil(img1_height + bottom_height_diff)
     stitched_img_width = math.ceil(img1_width + width_diff)
     stitched_img = np.zeros((stitched_img_height, stitched_img_width, 3), np.uint8)
     # Then, dump the contents of img1 at the right place in stitched_img
-    # Start at the top left corner of stitched_img, then shift it down
-    start_idx = math.floor(top_height_diff)
     for row in range(img1_height):
         for col in range(img1_width):
-            stitched_img[row + start_idx, col] = img1[row, col]
-    cv2.imshow("img1", img1)
-    cv2.imshow("stitched_img", stitched_img)
+            stitched_img[row, col] = img1[row, col]
+    # For every pixel in stitched_img, project onto img2
+    for x in range(stitched_img_width):
+        for y in range(stitched_img_height):
+            proj_x, proj_y = project(x, y, H)
+            # If projection is within img2's boundaries, add/blend img2's pixel onto stitched_img
+            if (0 <= proj_x <= right_edge) and (0 <= proj_y <= bottom_edge):
+                # Use bilinear interpolation to get img2's pixel
+                patch = cv2.getRectSubPix(img2, (1,1), (proj_x, proj_y))[0]
+                stitched_img[y, x] = patch
     return stitched_img
 
 # =========================PART 1=========================
@@ -215,9 +216,10 @@ cv2.imwrite(join(DIR_IMG, '2.png'), matched_img)
 # projections_test should be the same as the return value of project()
 # projections_test = cv2.perspectiveTransform(r1_pts_temp, H)
 
-H, H_inv = RANSAC(good, r1_kp, r2_kp, 200, 0.6, r1, r2)
-stitch(r1, r2, H, H_inv)
+H, H_inv = RANSAC(good, r1_kp, r2_kp, 200, 0.5, r1, r2)
+stitched_img = stitch(r1, r2, H, H_inv)
+cv2.imwrite(join(DIR_IMG, '4.png'), stitched_img)
 # =========================PART 2 END=========================
 
-cv2.waitKey(0)
-cv2.destroyAllWindows()
+# cv2.waitKey(0)
+# cv2.destroyAllWindows()
