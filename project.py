@@ -60,9 +60,9 @@ def get_out_img(features):
                 out[y, x] = math.floor((features[y,x]*255) / features.max())
     return out
 
-def project(x1, y1, H):
+def project(x, y, H):
     # Step 3A
-    coord = np.array([x1, y1, 1])
+    coord = np.array([x, y, 1])
     projection = np.matmul(H, coord)
     x2 = projection[0] / projection[2]
     y2 = projection[1] / projection[2]
@@ -85,18 +85,20 @@ def computeInlierCount(H, matches, img1_pts, img2_pts, inlierThreshold):
         match_idx += 1
     return nb_inliers
 
-def RANSAC(matches, kp1, kp2, numIterations, inlierThreshold):
+def RANSAC(matches, kp1, kp2, numIterations, inlierThreshold, img1, img2):
     # Step 3C
     best_H = None
     max_inliers = 0
     nb_matches = len(matches)
     img1_pts = np.array([kp1[m.queryIdx].pt for m in matches])
     img2_pts = np.array([kp2[m.trainIdx].pt for m in matches]) 
-    # TODO: Regenerate index if dupe
     for i in range(numIterations):
         rand_matches = []
         for j in range(4):
             idx = randint(0, nb_matches-1)
+            # Regenerate match if dupe
+            while matches[idx] in rand_matches:
+                idx = randint(0, nb_matches-1)
             rand_matches.append(matches[idx])
         rand_img1_pts = np.array([kp1[m.queryIdx].pt for m in rand_matches])
         rand_img2_pts = np.array([kp2[m.trainIdx].pt for m in rand_matches])
@@ -106,12 +108,13 @@ def RANSAC(matches, kp1, kp2, numIterations, inlierThreshold):
         if nb_inliers > max_inliers:
             max_inliers = nb_inliers
             best_H = H
+    # Compute refined homography using inliers
     inliers = get_inliers(best_H, matches, img1_pts, img2_pts, inlierThreshold)
-    refined_img1_pts = np.array([kp1[m.queryIdx].pt for m in inliers])
-    refined_img2_pts = np.array([kp1[m.trainIdx].pt for m in inliers])
-    refined_H, _ = cv2.findHomography(refined_img1_pts, refined_img2_pts, 0)
-    H_inv, _ = cv2.findHomography(refined_img2_pts, refined_img1_pts, 0)
-    matched_img = cv2.drawMatches(r1, r1_kp, r2, r2_kp, inliers, None, flags=cv2.DRAW_MATCHES_FLAGS_NOT_DRAW_SINGLE_POINTS)
+    img1_inlier_pts = np.array([kp1[m.queryIdx].pt for m in inliers])
+    img2_inlier_pts = np.array([kp2[m.trainIdx].pt for m in inliers])
+    refined_H, _ = cv2.findHomography(img1_inlier_pts, img2_inlier_pts, 0)
+    H_inv = np.linalg.inv(refined_H)
+    matched_img = cv2.drawMatches(img1, kp1, img2, kp2, inliers, None, flags=cv2.DRAW_MATCHES_FLAGS_NOT_DRAW_SINGLE_POINTS)
     cv2.imwrite(join(DIR_IMG, '3.png'), matched_img)
     return (refined_H, H_inv)
 
@@ -130,6 +133,37 @@ def get_inliers(H, matches, img1_pts, img2_pts, inlierThreshold):
             inliers.append(matches[match_idx])
         match_idx += 1
     return inliers
+
+def stitch(img1, img2, H, H_inv):
+    # TODO: Step 4
+    # Compute size of stitched_img
+    # Project four corners of img2 onto img1 using H_inv
+    bottom_edge = img2.shape[0] - 1
+    right_edge = img2.shape[1] - 1
+    top_left_x, top_left_y = project(0, 0, H_inv)
+    top_right_x, top_right_y = project(right_edge, 0, H_inv)
+    bottom_left_x, bottom_left_y = project(0, bottom_edge, H_inv)
+    bottom_right_x, bottom_right_y = project(right_edge, bottom_edge, H_inv)
+    
+    img1_height, img1_width = img1.shape[0], img1.shape[1]
+    top_height_diff = abs(top_right_y) if top_right_y < 0 else 0
+    bottom_height_diff = bottom_right_y - img1_height if bottom_right_y > img1_height else 0
+    width_diff = max(top_right_x, bottom_right_x) - img1_width
+
+    # First, create blank imaged with new dimensions
+    # Assume 3 channeled image
+    stitched_img_height = math.ceil(img1_height + top_height_diff + bottom_height_diff)
+    stitched_img_width = math.ceil(img1_width + width_diff)
+    stitched_img = np.zeros((stitched_img_height, stitched_img_width, 3), np.uint8)
+    # Then, dump the contents of img1 at the right place in stitched_img
+    # Start at the top left corner of stitched_img, then shift it down
+    start_idx = math.floor(top_height_diff)
+    for row in range(img1_height):
+        for col in range(img1_width):
+            stitched_img[row + start_idx, col] = img1[row, col]
+    cv2.imshow("img1", img1)
+    cv2.imshow("stitched_img", stitched_img)
+    return stitched_img
 
 # =========================PART 1=========================
 # Most methods used for part 1 are built-in OpenCV methods
@@ -181,8 +215,9 @@ cv2.imwrite(join(DIR_IMG, '2.png'), matched_img)
 # projections_test should be the same as the return value of project()
 # projections_test = cv2.perspectiveTransform(r1_pts_temp, H)
 
-H, H_inv = RANSAC(good, r1_kp, r2_kp, 200, 0.6)
+H, H_inv = RANSAC(good, r1_kp, r2_kp, 200, 0.6, r1, r2)
+stitch(r1, r2, H, H_inv)
 # =========================PART 2 END=========================
 
-# cv2.waitKey(0)
-# cv2.destroyAllWindows()
+cv2.waitKey(0)
+cv2.destroyAllWindows()
