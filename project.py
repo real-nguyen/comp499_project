@@ -115,8 +115,7 @@ def RANSAC(matches, kp1, kp2, numIterations, inlierThreshold, img1, img2):
     refined_H, _ = cv2.findHomography(img1_inlier_pts, img2_inlier_pts, 0)
     H_inv = np.linalg.inv(refined_H)
     matched_img = cv2.drawMatches(img1, kp1, img2, kp2, inliers, None, flags=cv2.DRAW_MATCHES_FLAGS_NOT_DRAW_SINGLE_POINTS)
-    cv2.imwrite(join(DIR_IMG, '3.png'), matched_img)
-    return (refined_H, H_inv)
+    return (refined_H, H_inv, matched_img)
 
 def get_inliers(H, matches, img1_pts, img2_pts, inlierThreshold):
     inliers = []
@@ -137,42 +136,41 @@ def get_inliers(H, matches, img1_pts, img2_pts, inlierThreshold):
 def stitch(img1, img2, H, H_inv):
     # Step 4
     # Compute size of stitched_img
-    # Projecting top left and bottom right corners of img2 give us all the info we need
+    # Projecting top right and bottom right corners of img2 give us all the info we need
     bottom_edge = img2.shape[0] - 1
     right_edge = img2.shape[1] - 1
     top_right_x, top_right_y = project(right_edge, 0, H_inv)
     bottom_right_x, bottom_right_y = project(right_edge, bottom_edge, H_inv)
     
     img1_height, img1_width = img1.shape[0], img1.shape[1]
+    top_height_diff = abs(top_right_y) if top_right_y < 0 else 0
     bottom_height_diff = bottom_right_y - img1_height if bottom_right_y > img1_height else 0
     width_diff = max(top_right_x, bottom_right_x) - img1_width
 
     # First, create blank image with new dimensions (assume 3 channels)
-    stitched_img_height = math.ceil(img1_height + bottom_height_diff)
+    stitched_img_height = math.ceil(img1_height + top_height_diff + bottom_height_diff)
     stitched_img_width = math.ceil(img1_width + width_diff)
     stitched_img = np.zeros((stitched_img_height, stitched_img_width, 3), np.uint8)
+    start_idx = math.floor(top_height_diff)
     # Then, dump the contents of img1 at the right place in stitched_img
     for row in range(img1_height):
         for col in range(img1_width):
-            stitched_img[row, col] = img1[row, col]
+            stitched_img[row + start_idx, col] = img1[row, col]
     # For every pixel in stitched_img, project onto img2
     for x in range(stitched_img_width):
-        for y in range(stitched_img_height):
+        for y in range(-start_idx, stitched_img_height):
             proj_x, proj_y = project(x, y, H)
             # If projection is within img2's boundaries, add/blend img2's pixel onto stitched_img
             if (0 <= proj_x <= right_edge) and (0 <= proj_y <= bottom_edge):
                 # Use bilinear interpolation to get img2's pixel
                 patch = cv2.getRectSubPix(img2, (1,1), (proj_x, proj_y))[0]
-                stitched_img[y, x] = patch
+                stitched_img[y + start_idx, x] = patch
     return stitched_img
 
 # =========================PART 1=========================
 # Most methods used for part 1 are built-in OpenCV methods
 # Much of the code using these methods are adapted from OpenCV documentation/tutorials
 # Get image gradients
-boxes_Ix = cv2.Sobel(boxes_gray, cv2.CV_32F, 1, 0, ksize=3)
-boxes_Iy = cv2.Sobel(boxes_gray, cv2.CV_32F, 0, 1, ksize=3)
-
 boxes_features = cv2.cornerHarris(boxes_gray, 3, 3, 0.04)
 boxes_features = get_local_max(boxes_features)
 boxes_kp = get_keypoints(boxes_features)
@@ -194,9 +192,10 @@ r2_out = get_out_img(r2_features)
 cv2.imwrite(join(DIR_IMG, '1c.png'), r2_out)
 
 sift = cv2.xfeatures2d.SIFT_create()
+bf = cv2.BFMatcher()
+
 _, r1_desc = sift.compute(r1, r1_kp)
 _, r2_desc = sift.compute(r2, r2_kp)
-bf = cv2.BFMatcher()
 # Returns 2 best matches, to apply ratio test
 matches = bf.knnMatch(r1_desc, r2_desc, 2)
 # Apply ratio test
@@ -216,10 +215,9 @@ cv2.imwrite(join(DIR_IMG, '2.png'), matched_img)
 # projections_test should be the same as the return value of project()
 # projections_test = cv2.perspectiveTransform(r1_pts_temp, H)
 
-H, H_inv = RANSAC(good, r1_kp, r2_kp, 200, 0.5, r1, r2)
+H, H_inv, matched_img = RANSAC(good, r1_kp, r2_kp, 200, 0.5, r1, r2)
+cv2.imwrite(join(DIR_IMG, '3.png'), matched_img)
+
 stitched_img = stitch(r1, r2, H, H_inv)
 cv2.imwrite(join(DIR_IMG, '4.png'), stitched_img)
 # =========================PART 2 END=========================
-
-# cv2.waitKey(0)
-# cv2.destroyAllWindows()
